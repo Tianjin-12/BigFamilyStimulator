@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>家族模拟器 viewer</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2026; --panel2: #23262e; --line: #33363e;
+    --fg: #d8dae0; --dim: #8b8f98; --accent: #e8b64c; --male: #5b9bd5; --female: #d87fb0;
+    --dead: #4a4d55; --lin: #e8b64c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: var(--bg); color: var(--fg);
+         font: 13px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; display: flex; flex-direction: column; }
+
+  /* 顶栏 */
+  header { display: flex; gap: 14px; align-items: center; padding: 8px 14px;
+           background: var(--panel); border-bottom: 1px solid var(--line); flex: none; }
+  header h1 { font-size: 15px; color: var(--accent); font-weight: 600; }
+  header .meta { color: var(--dim); font-size: 12px; }
+  header button { background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+                  border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+  header button:hover { border-color: var(--accent); }
+
+  .main { display: flex; flex: 1; min-height: 0; }
+
+  /* 左侧图表列 */
+  .charts { width: 320px; flex: none; display: flex; flex-direction: column; gap: 10px;
+            padding: 10px; overflow-y: auto; border-right: 1px solid var(--line); }
+  .chart-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+                padding: 8px 10px; flex: none; }
+  .chart-card h3 { font-size: 12px; color: var(--dim); font-weight: 500; margin-bottom: 4px; }
+  canvas.chart { width: 100%; height: 130px; display: block; cursor: crosshair; }
+  canvas.chart.tall { height: 150px; }
+
+  /* 谱系画布 */
+  .tree-wrap { flex: 1; position: relative; min-width: 0; }
+  #tree { width: 100%; height: 100%; display: block; cursor: grab; }
+  #tree.dragging { cursor: grabbing; }
+  .tree-legend { position: absolute; left: 10px; bottom: 10px; background: rgba(29,32,38,.85);
+                 border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px;
+                 font-size: 11px; color: var(--dim); display: flex; gap: 12px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+
+  /* 侧栏 */
+  aside { width: 300px; flex: none; background: var(--panel); border-left: 1px solid var(--line);
+          padding: 14px; overflow-y: auto; }
+  aside h2 { font-size: 14px; margin-bottom: 8px; }
+  .person-sex-M { color: var(--male); } .person-sex-F { color: var(--female); }
+  .kv { display: grid; grid-template-columns: 88px 1fr; gap: 3px 8px; font-size: 12px; }
+  .kv .k { color: var(--dim); }
+  .kv .v { color: var(--fg); }
+  .rel-sec { margin-top: 12px; }
+  .rel-sec h4 { font-size: 11px; color: var(--dim); margin: 6px 0 3px; }
+  .rel-link { color: var(--accent); cursor: pointer; text-decoration: underline dotted;
+              display: inline-block; margin: 1px 6px 1px 0; font-size: 12px; }
+  .rel-link:hover { color: #fff; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px;
+         border: 1px solid var(--line); color: var(--dim); margin-right: 4px; }
+  .tag.lineage { color: var(--lin); border-color: var(--lin); }
+  .tag.dead { color: var(--dead); }
+  .empty-hint { position: absolute; inset: 0; display: flex; align-items: center;
+                justify-content: center; color: var(--dim); font-size: 15px;
+                flex-direction: column; gap: 10px; pointer-events: none; }
+  #drop-overlay { position: fixed; inset: 0; background: rgba(232,182,76,.12); z-index: 99;
+                  display: none; align-items: center; justify-content: center;
+                  border: 3px dashed var(--accent); color: var(--accent); font-size: 20px; }
+  #drop-overlay.on { display: flex; }
+
+  .histogram { display: flex; align-items: flex-end; gap: 2px; height: 110px; padding: 6px 2px 0; }
+  .hist-bar { flex: 1; background: var(--accent); opacity: .75; border-radius: 2px 2px 0 0;
+              position: relative; min-width: 3px; }
+  .hist-bar:hover { opacity: 1; }
+  .hist-bar .lbl { position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
+                   font-size: 9px; color: var(--dim); white-space: nowrap; }
+  .hist-note { margin-top: 18px; font-size: 10px; color: var(--dim); text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>家族模拟器</h1>
+  <button id="btn-load">加载 JSON</button>
+  <input type="file" id="file-input" accept=".json" style="display:none">
+  <button id="btn-reset">重置视图</button>
+  <span class="meta" id="meta"></span>
+</header>
+
+<div class="main">
+  <div class="charts">
+    <div class="chart-card"><h3>村庄人口 / 血脉男丁</h3><canvas class="chart tall" id="ch-pop"></canvas></div>
+    <div class="chart-card"><h3>血脉世代人数</h3><div class="histogram" id="ch-gen"></div><div class="hist-note" id="gen-note"></div></div>
+    <div class="chart-card"><h3>时期参数（每 10 年一带）</h3><canvas class="chart tall" id="ch-era"></canvas></div>
+  </div>
+
+  <div class="tree-wrap">
+    <canvas id="tree"></canvas>
+    <div class="empty-hint" id="hint">
+      <div style="font-size:34px">.family</div>
+      <div>拖入 cli.py 导出的 run JSON，或点击「加载 JSON」</div>
+      <div>滚轮缩放 · 拖动平移 · 点击人物查看详情</div>
+    </div>
+    <div class="tree-legend">
+      <span><span class="dot" style="background:var(--male)"></span>男</span>
+      <span><span class="dot" style="background:var(--female)"></span>女</span>
+      <span><span class="dot" style="background:var(--lin)"></span>血脉男丁</span>
+      <span><span class="dot" style="background:var(--dead)"></span>已故</span>
+    </div>
+  </div>
+
+  <aside id="side">
+    <div style="color:var(--dim)">点击谱系中的人物查看详情</div>
+  </aside>
+</div>
+<div id="drop-overlay">松开以加载模拟结果</div>
+
+<script src="names.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

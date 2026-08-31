@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>家族模拟器 · 实时世界</title>
+<style>
+  :root {
+    --bg: #111318; --panel: #1b1e25; --panel2: #22252e; --line: #33363f;
+    --fg: #dcdee4; --dim: #8b8f9a; --accent: #e8b64c;
+    --male: #5b9bd5; --female: #d87fb0; --dead: #4a4d55; --lin: #e8b64c;
+    --red: #e05555; --green: #7fbf8f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: var(--bg); color: var(--fg);
+         font: 13px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif;
+         display: flex; flex-direction: column; }
+
+  /* ===== 顶栏：世界纪年 + 播放控制 ===== */
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--line); flex: none;
+           flex-wrap: wrap; row-gap: 2px; }
+  header > * { white-space: nowrap; }
+  .world-clock { display: flex; align-items: baseline; gap: 10px; min-width: 300px; }
+  .world-clock .year { font-size: 26px; font-weight: 700; color: var(--accent);
+                       font-variant-numeric: tabular-nums; min-width: 92px; }
+  .era-chip { font-size: 11px; padding: 2px 10px; border-radius: 10px;
+              border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+  .era-chip b { color: var(--fg); font-weight: 500; }
+  .stats-strip { display: flex; gap: 16px; font-size: 12px; color: var(--dim);
+                 margin-left: auto; flex-wrap: wrap; }
+  .stats-strip b { color: var(--fg); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .stats-strip .lin b { color: var(--lin); }
+  .stats-strip .lin b.warn { color: #e8984c; }
+  .stats-strip .lin b.danger { color: var(--red); }
+  .stats-strip .out b { color: #c9a15f; }
+
+  /* 播放控制 */
+  .controls { display: flex; gap: 8px; align-items: center; }
+  .controls button { background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+                     border-radius: 6px; padding: 5px 14px; cursor: pointer; font-size: 13px;
+                     white-space: nowrap; }
+  .controls button:hover { border-color: var(--accent); }
+  .controls button.busy { opacity: .55; }
+  .controls button.primary { background: var(--accent); color: #14161a; font-weight: 600;
+                             border-color: var(--accent); }
+  .speed { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .speed button { border: none; border-radius: 0; padding: 5px 10px; font-size: 12px; }
+  .speed button.on { background: var(--accent); color: #14161a; }
+
+  /* ===== 时间轴 ===== */
+  .timeline-wrap { flex: none; background: var(--panel); border-bottom: 1px solid var(--line);
+                   padding: 6px 16px 8px; }
+  #timeline { width: 100%; height: 44px; display: block; cursor: pointer; }
+
+  .main { display: flex; flex: 1; min-height: 0; }
+
+  /* ===== 左列：世界图表 ===== */
+  .charts { width: 300px; flex: none; display: flex; flex-direction: column;
+            border-right: 1px solid var(--line); overflow-y: auto; }
+  .chart-card { background: var(--panel); border-bottom: 1px solid var(--line); padding: 8px 10px; }
+  .chart-card h3 { font-size: 11px; color: var(--dim); font-weight: 500; margin-bottom: 4px; }
+  canvas.chart { width: 100%; height: 110px; display: block; }
+  canvas.chart.tall { height: 170px; }
+
+  /* ===== 中列：谱系 ===== */
+  .tree-wrap { flex: 1; position: relative; min-width: 0; }
+  #tree { width: 100%; height: 100%; display: block; cursor: grab; }
+  #tree.dragging { cursor: grabbing; }
+  .tree-legend { position: absolute; left: 10px; bottom: 10px; background: rgba(27,30,37,.88);
+                 border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px;
+                 font-size: 11px; color: var(--dim); display: flex; gap: 11px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; }
+  .tree-tools { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }
+  .tree-tools button { background: rgba(27,30,37,.88); color: var(--fg);
+                       border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px;
+                       font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .tree-tools button:hover { border-color: var(--accent); }
+  .extinct-card { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+                  z-index: 9; background: rgba(27,30,37,.95); border: 1px solid var(--red);
+                  border-radius: 10px; padding: 10px 16px; text-align: center;
+                  box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+  .extinct-card .tx { color: var(--red); font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+  .extinct-card .ec-btns { display: flex; gap: 8px; justify-content: center; }
+  .extinct-card button { background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+                         border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+  .extinct-card button:hover { border-color: var(--accent); }
+  .flash { position: absolute; pointer-events: none; font-size: 11px; color: var(--lin);
+           animation: fadeup 1.6s ease-out forwards; white-space: nowrap; }
+  @keyframes fadeup { from { opacity: 1; transform: translateY(0); }
+                      to { opacity: 0; transform: translateY(-26px); } }
+
+  /* ===== 右列：事件流 + 侧栏 ===== */
+  .right-col { width: 292px; flex: none; display: flex; flex-direction: column;
+               border-left: 1px solid var(--line); min-height: 0; }
+  .feed { flex: 1.2; min-height: 120px; overflow-y: auto; padding: 8px 12px;
+          border-bottom: 1px solid var(--line); background: var(--panel); }
+  .feed h3 { font-size: 11px; color: var(--dim); margin-bottom: 6px; font-weight: 500;
+             display: flex; justify-content: space-between; align-items: center; }
+  .feed-new { color: var(--accent); cursor: pointer; font-size: 11px; }
+  .feed-new:hover { text-decoration: underline; }
+  .ev { display: flex; gap: 8px; font-size: 12px; padding: 2.5px 0; align-items: baseline; }
+  .ev .y { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 44px; font-size: 11px; }
+  .ev .tx { flex: 1; }
+  .ev.k-era .tx { color: var(--accent); }
+  .ev.k-birth .tx { color: var(--lin); }
+  .ev.k-death .tx { color: var(--dim); }
+  .ev.k-marriage .tx { color: var(--female); }
+  .ev.k-migrated .tx { color: #c9a15f; }
+  .ev.k-extinct .tx { color: var(--red); font-weight: 700; }
+  .ev.k-immigration .tx { color: var(--green); }
+  .ev.k-danger .tx { color: #e8984c; }
+  .ev.k-vital .tx { color: #6f7480; font-size: 11px; }
+  .ev.k-harvest .tx { color: #a8b26a; }
+  .ev.k-flavor .tx { color: #5f6470; font-style: italic; }
+  .ev.k-elder_death .tx { color: #9aa0ab; }
+  .ev.k-coming_of_age .tx { color: var(--lin); }
+  .ev.k-milestone .tx { color: var(--green); }
+  .ev.k-weddings .tx { color: var(--female); }
+  /* 血脉主线事件：金边高亮卡 */
+  .ev.hl { border-left: 2px solid var(--lin); padding-left: 6px;
+           background: rgba(232,182,76,.07); border-radius: 3px; margin-left: -8px; }
+  .ev.k-vital { opacity: .65; font-size: 11px; }
+  .ev.k-flavor .tx { font-size: 11px; }
+  .ev.k-harvest .tx { font-size: 11.5px; }
+  .ev.k-weddings .tx { color: var(--female); }
+
+  aside { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; background: var(--panel); }
+  aside h2 { font-size: 14px; margin-bottom: 8px; }
+  .person-sex-M { color: var(--male); } .person-sex-F { color: var(--female); }
+  .kv { display: grid; grid-template-columns: 84px 1fr; gap: 3px 8px; font-size: 12px; }
+  .kv .k { color: var(--dim); }
+  .rel-sec h4 { font-size: 11px; color: var(--dim); margin: 8px 0 3px; }
+  .rel-link { color: var(--accent); cursor: pointer; text-decoration: underline dotted;
+              display: inline-block; margin: 1px 6px 1px 0; font-size: 12px; }
+  .rel-link:hover { color: #fff; }
+  .bio { color: var(--dim); font-size: 12px; margin-bottom: 8px; border-left: 2px solid var(--line);
+         padding-left: 8px; font-style: italic; }
+  #side-best { margin-bottom: 10px; }
+  #side-best h4 { font-size: 11px; color: var(--accent); font-weight: 500; margin-bottom: 4px; }
+  .best-grid { display: grid; gap: 3px; border: 1px solid var(--line); border-radius: 6px;
+               padding: 8px 10px; background: var(--panel2); }
+  .bk { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); gap: 8px; }
+  .bk b { color: var(--fg); font-weight: 500; text-align: right; }
+  .side-tabs { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+  .side-tabs button { background: var(--panel2); color: var(--dim); border: 1px solid var(--line);
+                      border-radius: 5px; padding: 3px 12px; cursor: pointer; font-size: 12px;
+                      white-space: nowrap; }
+  .side-tabs button.on { color: var(--accent); border-color: var(--accent); }
+  .side-tabs button:hover { color: var(--fg); }
+  .cr { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px dashed #26282f; }
+  .cr .y { color: var(--dim); min-width: 42px; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .cr .tx { flex: 1; }
+  .tag.honor { color: #c9a15f; border-color: #c9a15f; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px;
+         border: 1px solid var(--line); color: var(--dim); margin-right: 4px; }
+  .tag.lineage { color: var(--lin); border-color: var(--lin); }
+  .side-focus { float: right; font-size: 11px; background: var(--panel2); color: var(--dim);
+                border: 1px solid var(--line); border-radius: 4px; padding: 1px 8px;
+                cursor: pointer; }
+  .side-focus:hover { color: var(--fg); border-color: var(--accent); }
+
+  /* ===== 新世界对话框 ===== */
+  dialog { background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+           border-radius: 10px; padding: 18px 20px; width: 460px;
+           margin: auto; max-height: 92vh; overflow-y: auto; }
+  dialog::backdrop { background: rgba(0,0,0,.55); }
+  dialog h2 { font-size: 15px; margin-bottom: 12px; color: var(--accent); }
+  dialog .row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+  dialog label { width: 130px; color: var(--dim); font-size: 12px; }
+  dialog input[type=number], dialog input[type=text] { background: var(--bg); color: var(--fg);
+                              border: 1px solid var(--line); border-radius: 5px;
+                              padding: 5px 8px; width: 110px; font-size: 13px; }
+  dialog input[type=text].wide { width: 130px; }
+  .fname-err { color: var(--red); font-size: 11px; }
+  dialog select { background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+                  border-radius: 5px; padding: 5px; }
+  dialog .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  dialog button { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+                  border-radius: 6px; padding: 6px 16px; cursor: pointer; }
+  dialog button.primary { background: var(--accent); color: #14161a; font-weight: 600; }
+  .hint-keys { font-size: 11px; color: var(--dim); margin-top: 10px; }
+  kbd { background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+        padding: 0 5px; font-size: 10px; }
+
+  /* ===== 封面（主菜单） ===== */
+  .cover { position: fixed; inset: 0; z-index: 60; overflow: hidden;
+           display: flex; align-items: center; justify-content: center;
+           background: radial-gradient(1100px 700px at 50% -8%, #262b38 0%, #15171d 55%, #0b0c10 100%);
+           transition: opacity .55s ease, visibility .55s; }
+  .cover.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+  .cover::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      repeating-radial-gradient(circle at 50% 44%, transparent 0 64px, rgba(232,182,76,.055) 65px 66px);
+    animation: ringsdrift 60s linear infinite; }
+  @keyframes ringsdrift { from { transform: scale(1); } to { transform: scale(1.35); } }
+  .cover::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    box-shadow: inset 0 0 220px rgba(0,0,0,.75); }
+  .cover-inner { position: relative; z-index: 1; text-align: center; padding-bottom: 4vh; }
+  .cover-eyebrow { color: rgba(232,182,76,.75); font-size: 14px; letter-spacing: 8px;
+                   font-family: KaiTi, STKaiti, serif; margin-bottom: 10px; }
+  .cover-title { font-family: KaiTi, STKaiti, "Noto Serif SC", serif; font-weight: 700;
+                 font-size: clamp(52px, 9vw, 84px); color: var(--accent);
+                 letter-spacing: 14px; text-indent: 14px; line-height: 1.15;
+                 text-shadow: 0 0 34px rgba(232,182,76,.35), 0 2px 0 #6b5320; }
+  .cover-sub { color: var(--dim); font-size: 14px; letter-spacing: 3px; margin: 14px 0 34px;
+               font-family: KaiTi, STKaiti, serif; }
+  .cover-menu { display: flex; flex-direction: column; gap: 10px; width: min(360px, 86vw);
+                margin: 0 auto; }
+  .menu-btn { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+              width: 100%; padding: 11px 20px; cursor: pointer;
+              background: rgba(27,30,37,.82); color: var(--fg);
+              border: 1px solid var(--line); border-radius: 8px;
+              font-size: 15.5px; letter-spacing: 3px; font-family: inherit;
+              transition: border-color .18s, transform .18s, box-shadow .18s, background .18s; }
+  .menu-btn:hover:not(:disabled) { border-color: var(--accent);
+              box-shadow: 0 0 16px rgba(232,182,76,.14);
+              background: rgba(35,38,47,.9); transform: translateY(-1px); }
+  .menu-btn .mb-extra { font-size: 11.5px; letter-spacing: 1px; color: var(--dim);
+                        font-variant-numeric: tabular-nums; }
+  .menu-btn.primary { padding: 14px 22px; font-size: 19px; font-weight: 700;
+                      background: linear-gradient(180deg, #f0c05a, #dfa63e);
+                      border-color: #f4cd77; color: #171207;
+                      box-shadow: 0 4px 22px rgba(232,182,76,.28); }
+  .menu-btn.primary:hover:not(:disabled) { filter: brightness(1.06);
+                      box-shadow: 0 6px 26px rgba(232,182,76,.4); }
+  .cover-continuesub { font-size: 11.5px; color: var(--dim); letter-spacing: 1px;
+                       margin: -3px 0 7px; min-height: 15px; font-variant-numeric: tabular-nums; }
+  .cover-foot { margin-top: 36px; color: #565a63; font-size: 11px; letter-spacing: 2px; }
+
+  /* ===== 元系统：toast 与成就横幅 ===== */
+  .meta-toast { position: fixed; top: 72px; left: 50%; transform: translate(-50%, -14px);
+                opacity: 0; z-index: 200; pointer-events: none;
+                background: rgba(30,33,41,.96); border: 1px solid var(--line);
+                border-left: 3px solid var(--accent); color: var(--fg);
+                padding: 9px 20px; border-radius: 8px; font-size: 13px;
+                box-shadow: 0 6px 20px rgba(0,0,0,.45); transition: all .28s ease; }
+  .meta-toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .achv-banner { position: fixed; top: 66px; right: -430px; width: 320px; z-index: 210;
+                 display: flex; gap: 13px; align-items: center; padding: 13px 16px;
+                 background: linear-gradient(135deg, #2b2412 0%, #1c1e26 62%);
+                 border: 1px solid var(--accent); border-radius: 10px;
+                 box-shadow: 0 8px 28px rgba(0,0,0,.55), 0 0 24px rgba(232,182,76,.18);
+                 transition: right .4s cubic-bezier(.2, .9, .25, 1); }
+  .achv-banner.show { right: 18px; }
+  .ab-icon { font-size: 34px; line-height: 1; }
+  .ab-cap { font-size: 10.5px; color: var(--accent); letter-spacing: 3px; margin-bottom: 2px; }
+  .ab-name { font-size: 17px; font-weight: 700; color: #fff;
+             font-family: KaiTi, STKaiti, serif; letter-spacing: 2px; }
+  .ab-desc { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+
+  /* ===== 元系统对话框通用 ===== */
+  #dlg-saves { width: min(780px, 94vw); }
+  #dlg-achv { width: min(900px, 95vw); }
+  #dlg-settings { width: min(560px, 92vw); }
+  #dlg-achv h2, #dlg-saves h2, #dlg-settings h2 {
+    display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .panel-subnote { font-size: 11px; color: var(--dim); margin: 2px 0 12px; }
+  .btns button.minor { font-size: 12px; padding: 5px 12px; opacity: .85; }
+
+  /* ---- 成就殿堂 ---- */
+  .achv-progress-wrap { height: 5px; background: #26282f; border-radius: 3px;
+                        overflow: hidden; margin: 2px 0 14px; }
+  .achv-progress-wrap i { display: block; height: 100%; width: 0;
+                          background: linear-gradient(90deg, #a67c26, var(--accent));
+                          transition: width .5s ease; }
+  #achv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+               gap: 10px; max-height: 56vh; overflow-y: auto; padding-right: 4px; }
+  .achv-card { border: 1px solid var(--line); border-radius: 9px; padding: 13px 11px 11px;
+               text-align: center; background: var(--panel); min-height: 158px;
+               display: flex; flex-direction: column; gap: 4px; }
+  .achv-card.got { border-color: rgba(232,182,76,.65);
+                   background: linear-gradient(180deg, rgba(232,182,76,.09), rgba(27,30,37,.6)); }
+  .ac-icon { font-size: 31px; line-height: 1.15; }
+  .achv-card.lock .ac-icon { filter: grayscale(1); opacity: .38; }
+  .ac-name { font-weight: 700; font-size: 14.5px; letter-spacing: 1px; }
+  .achv-card.got .ac-name { color: var(--accent); }
+  .achv-card.lock .ac-name { color: #7c8089; }
+  .ac-desc { font-size: 11px; color: var(--dim); line-height: 1.45; flex: 1; }
+  .ac-date { font-size: 11px; color: #b08c3e; }
+  .ac-bar { height: 4px; border-radius: 2px; background: #26282f; overflow: hidden; }
+  .ac-bar i { display: block; height: 100%; background: #5b87b8; }
+  .ac-num { font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .ac-hint { font-size: 10.5px; color: #565a63; }
+
+  /* ---- 存档馆 ---- */
+  .sv-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .sv-tabs button { background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+                    border-radius: 6px; padding: 5px 16px; cursor: pointer; font-size: 12.5px; }
+  .sv-tabs button.on { color: var(--accent); border-color: var(--accent); }
+  #sv-list-pane .sv-savebar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+                              background: var(--bg); border: 1px dashed var(--line);
+                              border-radius: 8px; padding: 8px 12px; }
+  .sv-savebar input[type=text] { flex: 1; background: var(--panel2); color: var(--fg);
+                                 border: 1px solid var(--line); border-radius: 5px;
+                                 padding: 6px 9px; font-size: 13px; }
+  .sv-savebar label { font-size: 12px; color: var(--dim); white-space: nowrap; }
+  #sv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(226px, 1fr));
+             gap: 10px; max-height: 48vh; overflow-y: auto; padding: 2px 4px 6px 0; }
+  .sv-empty { color: var(--dim); text-align: center; padding: 44px 0; font-size: 13px;
+              line-height: 2; }
+  .sv-card { border: 1px solid var(--line); border-radius: 9px; padding: 11px 13px;
+             background: var(--panel); display: flex; flex-direction: column; gap: 5px; }
+  .sv-card.autosave { border-style: dashed; }
+  .sv-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .sv-name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+             white-space: nowrap; }
+  .sv-flag { font-size: 10.5px; padding: 1px 7px; border-radius: 9px; white-space: nowrap; }
+  .sv-flag.dead { color: var(--red); border: 1px solid rgba(224,85,85,.5); }
+  .sv-flag.fin { color: var(--green); border: 1px solid rgba(127,191,143,.5); }
+  .sv-meta { font-size: 12px; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .sv-time { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .sv-btns { display: flex; gap: 6px; margin-top: 5px; }
+  .sv-btns button { flex: 1; background: var(--panel2); color: var(--fg);
+                    border: 1px solid var(--line); border-radius: 5px; padding: 4.5px 0;
+                    font-size: 11.5px; cursor: pointer; }
+  .sv-btns button:hover { border-color: var(--accent); }
+  .sv-btns button.go { background: rgba(232,182,76,.14); border-color: rgba(232,182,76,.55);
+                       color: var(--accent); font-weight: 600; }
+  .sv-btns button.del:hover { border-color: var(--red); color: var(--red); }
+  .sv-actions-row { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+
+  /* ---- 总览统计 ---- */
+  .ov-cards { display: flex; gap: 9px; margin-bottom: 14px; }
+  .ov-card { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+             padding: 12px 8px 10px; text-align: center; }
+  .ov-card b { display: block; font-size: 21px; color: var(--accent);
+               font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+  .ov-card span { font-size: 11px; color: var(--dim); }
+  .ov-table { width: 100%; border-collapse: collapse; font-size: 12px;
+              font-variant-numeric: tabular-nums; margin-bottom: 16px; }
+  .ov-table th, .ov-table td { border: 1px solid var(--line); padding: 5.5px 9px; }
+  .ov-table th { color: var(--dim); font-weight: 500; background: var(--bg); font-size: 11.5px; }
+  .ov-table td:first-child { color: var(--fg); }
+  .ov-table td { color: var(--fg); text-align: right; }
+  .ov-table td:first-child { text-align: left; }
+  .ov-section { margin-bottom: 16px; }
+  .ov-section h4 { font-size: 11.5px; color: var(--dim); font-weight: 500; margin-bottom: 8px; }
+  .hist { display: flex; align-items: flex-end; gap: 6px; height: 104px;
+          background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+          padding: 10px 12px 6px; }
+  .hist-col { flex: 1; display: flex; flex-direction: column; align-items: center;
+              justify-content: flex-end; gap: 3px; height: 100%; }
+  .hist-col i { width: 100%; max-width: 34px; border-radius: 3px 3px 0 0; min-height: 2px;
+                background: linear-gradient(180deg, #7fa8d4, #4a6f96); }
+  .hist-col .hn { font-size: 10px; color: var(--fg); }
+  .hist-col .hl { font-size: 9.5px; color: var(--dim); }
+  .rs-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 12px; }
+  .rs-label { width: 150px; color: var(--fg); flex: none; }
+  .rs-bar { flex: 1; height: 12px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+  .rs-bar i { display: block; height: 100%; border-radius: 3px;
+              background: linear-gradient(90deg, rgba(224,85,85,.85), rgba(160,60,60,.85)); }
+  .rs-n { width: 30px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .ov-note { font-size: 11px; color: #565a63; }
+
+  /* ---- 设置面板 ---- */
+  .set-sec { margin-bottom: 16px; }
+  .set-sec h4 { font-size: 11.5px; color: var(--accent); font-weight: 600; letter-spacing: 2px;
+                margin-bottom: 7px; border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+  .set-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+             padding: 5px 0; font-size: 13px; }
+  .set-row .hint { font-size: 10.5px; color: var(--dim); display: block; margin-top: 1px; }
+  .set-row select { background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+                    border-radius: 5px; padding: 4.5px 8px; font-size: 12.5px; min-width: 108px; }
+  .switch { position: relative; width: 40px; height: 21px; flex: none; }
+  .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .switch em { position: absolute; inset: 0; border-radius: 11px; background: #33363f;
+               pointer-events: none; transition: background .18s; }
+  .switch em::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 16px;
+                      height: 16px; border-radius: 50%; background: #8b8f9a; transition: .18s; }
+  .switch input:checked + em { background: rgba(232,182,76,.4); }
+  .switch input:checked + em::after { left: 21px; background: var(--accent); }
+  .set-danger-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .set-danger-row button { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+                           border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  .set-danger-row button:hover { border-color: var(--red); color: var(--red); }
+
+</style>
+</head>
+<body>
+
+<!-- ===== 封面 / 主菜单 ===== -->
+<div id="cover" class="cover">
+  <div class="cover-inner">
+    <div class="cover-eyebrow">一 姓 之 源 · 千 载 兴 衰</div>
+    <h1 class="cover-title">家族模拟器</h1>
+    <div class="cover-sub">从一对夫妻出发，看你的血脉能否穿越千年</div>
+    <nav class="cover-menu">
+      <button id="cv-start" class="menu-btn primary"><span>▶ 开始游戏</span></button>
+      <div class="cover-continuesub" id="cv-start-sub"></div>
+      <button id="cv-new" class="menu-btn"><span>✦ 新的一局</span></button>
+      <button id="cv-saves" class="menu-btn"><span>🗂 存档馆</span><span class="mb-extra" id="cv-save-count"></span></button>
+      <button id="cv-achv" class="menu-btn"><span>🏆 成就殿堂</span><span class="mb-extra" id="cv-achv-badge"></span></button>
+      <button id="cv-settings" class="menu-btn"><span>⚙ 世界之规</span></button>
+    </nav>
+    <footer class="cover-foot">M1 · 本地运行 · 无需联网 · 存档与成就保存在本浏览器</footer>
+  </div>
+</div>
+
+<header>
+  <div class="world-clock">
+    <span class="year" id="clock-year">y 0</span>
+    <span class="era-chip" id="era-chip">第 <b>1</b> 纪</span>
+    <span class="era-chip" id="era-detail"></span>
+  </div>
+  <div class="controls">
+    <button class="primary" id="btn-play">▶ 播放</button>
+    <button id="btn-step">+1 年</button>
+    <button id="btn-10">+10 年</button>
+    <div class="speed" id="speed-group">
+      <button data-ms="600">慢</button>
+      <button data-ms="240" class="on">中</button>
+      <button data-ms="80">快</button>
+      <button data-ms="16">极速</button>
+    </div>
+    <button id="btn-new">✦ 新世界</button>
+    <span style="width:1px;height:18px;background:var(--line);display:inline-block"></span>
+    <button id="btn-saves" title="存档馆 · 保存 / 读取 / 导出导入">💾</button>
+    <button id="btn-achv" title="成就殿堂">🏆</button>
+    <button id="btn-settings" title="世界之规（设置）">⚙</button>
+    <button id="btn-home" title="回到封面">🏠</button>
+  </div>
+  <div class="stats-strip">
+    <span>村庄 <b id="st-pop">0</b></span>
+    <span>夫妻 <b id="st-couples">0</b></span>
+    <span class="lin">血脉男丁 <b id="st-lin">0</b></span>
+    <span class="lin">血脉世代 <b id="st-gen">0</b></span>
+    <span>累计 <b id="st-ever">0</b></span>
+    <span class="out" id="st-flow-wrap" title="本年出生/死亡/迁出/迁入">流 <b id="st-flow">—</b></span>
+  </div>
+</header>
+
+<div class="timeline-wrap">
+  <canvas id="timeline"></canvas>
+</div>
+
+<div class="main">
+  <div class="charts">
+    <div class="chart-card"><h3>村庄人口 / 血脉男丁</h3><canvas class="chart" id="ch-pop"></canvas></div>
+    <div class="chart-card"><h3>人口流量：净变化（柱）+ 5 年均线（金）+ 生死参照（细线）</h3><canvas class="chart" id="ch-flow"></canvas></div>
+    <div class="chart-card"><h3>迁移史：迁入累计（蓝）/ 迁出累计（金）/ 净迁移（绿），红条=迁出潮</h3><canvas class="chart" id="ch-mig"></canvas></div>
+    <div class="chart-card"><h3>年龄-性别金字塔（在世）</h3><canvas class="chart" id="ch-pyr"></canvas></div>
+    <div class="chart-card"><h3>姓氏排行（在世 · 前 12）</h3><canvas class="chart tall" id="ch-surnames"></canvas></div>
+    <div class="chart-card"><h3>时期参数：生育 p / 夭折率 / K</h3><canvas class="chart" id="ch-era"></canvas></div>
+    <div class="chart-card"><h3>死亡率曲线（当前年 · 锚点×时期乘数）</h3><canvas class="chart" id="ch-mort"></canvas></div>
+    <div class="chart-card"><h3>时艰度 hardship（外迁压力）</h3><canvas class="chart" id="ch-hard"></canvas></div>
+  </div>
+
+  <div class="tree-wrap">
+    <canvas id="tree"></canvas>
+    <div class="tree-tools">
+      <button id="tt-zin" title="放大">＋</button>
+      <button id="tt-zout" title="缩小">－</button>
+      <button id="tt-fit" title="缩放至整棵谱系">全览</button>
+      <button id="tt-lineage" title="缩放至血脉子树">血脉</button>
+      <button id="tt-selected" title="定位到选中者">选中</button>
+    </div>
+    <div class="tree-legend">
+      <span><span class="dot" style="background:var(--male)"></span>男</span>
+      <span><span class="dot" style="background:var(--female)"></span>女</span>
+      <span><span class="dot" style="background:var(--lin)"></span>血脉男丁</span>
+      <span><span class="dot" style="background:var(--dead)"></span>已故/外迁</span>
+      <span>滚轮缩放 · 拖动平移</span>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="feed" id="feed">
+      <h3>世界事件 <span id="feed-new" class="feed-new" hidden>↓ 有新事件</span></h3>
+      <div id="feed-list"></div>
+    </div>
+  <aside id="side-wrap">
+    <div class="side-tabs">
+      <button id="tab-detail" class="on">人物</button>
+      <button id="tab-chronicle">村志</button>
+      <span style="flex:1"></span>
+      <button id="btn-export-log" title="把村志导出为 txt">导出</button>
+    </div>
+    <div id="side">
+      <div style="color:var(--dim)">点击谱系中的人物查看详情</div>
+    </div>
+    <div id="side-chronicle" hidden></div>
+  </aside>
+  </div>
+</div>
+
+<dialog id="dlg-new">
+  <h2>创造新世界</h2>
+  <div class="row"><label>种子 seed</label><input type="number" id="in-seed" value="42"></div>
+  <div class="row"><label>创始者姓名</label>
+    <input type="text" id="in-fsurname" class="wide" placeholder="姓（1-2 字，如 李）" maxlength="2">
+    <input type="text" id="in-fgiven" class="wide" placeholder="名（1-2 字，如 光耀）" maxlength="2">
+  </div>
+  <div class="row" id="fname-err-row" hidden><label></label><span class="fname-err" id="fname-err-tx"></span></div>
+  <div class="row"><label>创始村庄规模</label><input type="number" id="in-village" value="300"></div>
+  <div class="row"><label>终身生育上限</label><input type="number" id="in-cap" value="5"></div>
+  <div class="row"><label>禁婚旁系亲等 k</label>
+    <select id="in-kin">
+      <option value="2">2（法律标准：禁堂表亲）</option>
+      <option value="1">1（仅禁兄妹，放开堂表）</option>
+      <option value="3">3（连第二表亲也禁）</option>
+      <option value="0">0（放开旁系，仅直系禁）</option>
+    </select>
+  </div>
+  <div class="row"><label>生育概率基准 ×</label><input type="number" id="in-fert" value="1.0" step="0.1" min="0.1"></div>
+  <div class="row"><label>死亡压力 ×</label><input type="number" id="in-mort" value="1.0" step="0.1" min="0.1"></div>
+  <div class="row"><label>时代背景</label>
+    <select id="in-anchor">
+      <option value="transition">过渡（古代 → 现代）</option>
+      <option value="ancient">恒古代（高压：高夭折高死亡）</option>
+      <option value="modern">恒现代（低压：低夭折低死亡）</option>
+    </select>
+  </div>
+  <div class="row"><label>时艰/迁出潮频率</label>
+    <select id="in-hardship">
+      <option value="0.08">正常（默认）</option>
+      <option value="0.2">多灾之年</option>
+      <option value="0.4">乱世流离</option>
+      <option value="0.0">太平时节（几乎无潮）</option>
+    </select>
+  </div>
+  <div class="row"><label>村庄承载 K</label><input type="number" id="in-k" value="600" step="50" min="100"></div>
+  <div class="row"><label>渐进撮合</label>
+    <select id="in-match">
+      <option value="none">关（单年全配完 · 经典行为）</option>
+      <option value="20">开（每年最多 20 对）</option>
+      <option value="8">慢（每年最多 8 对）</option>
+    </select>
+  </div>
+  <div class="row"><label>血脉外迁保护</label>
+    <select id="in-prot">
+      <option value="1.0">关（均匀外迁 · 经典行为）</option>
+      <option value="0.2">弱（血脉外迁权重 ×0.2）</option>
+      <option value="0.0">强（血脉男丁不外迁）</option>
+    </select>
+  </div>
+  <div class="btns">
+    <button id="dlg-cancel">取消</button>
+    <button class="primary" id="dlg-go">开天辟地</button>
+  </div>
+  <div class="hint-keys">快捷键：<kbd>Space</kbd> 播放/暂停 · <kbd>→</kbd> 前进 1 年 · <kbd>Shift+→</kbd> 前进 10 年</div>
+</dialog>
+
+<!-- ===== 成就殿堂 ===== -->
+<dialog id="dlg-achv">
+  <h2>🏆 成就殿堂 <span style="font-size:12px;color:var(--dim);font-weight:400" id="achv-count">0 / 10</span></h2>
+  <div class="achv-progress-wrap" id="achv-progress"><i></i></div>
+  <div class="panel-subnote">成就永久点亮，跨世界、跨存档累计；换浏览器或清理数据会丢失。</div>
+  <div id="achv-grid"></div>
+  <div class="btns">
+    <button class="minor" id="btn-share">🖼 生成分享图（PNG）</button>
+    <span style="flex:1"></span>
+    <button id="achv-close">关闭</button>
+  </div>
+</dialog>
+
+<!-- ===== 存档馆 ===== -->
+<dialog id="dlg-saves">
+  <h2>🗂 存档馆</h2>
+  <div class="sv-tabs">
+    <button id="sv-tab-list" class="on">存档列表</button>
+    <button id="sv-tab-stats">总览统计</button>
+  </div>
+
+  <div id="sv-list-pane">
+    <div class="sv-savebar" id="sv-savebar" hidden>
+      <label>把当前进度存为新档：</label>
+      <input type="text" id="sv-newname" maxlength="40" placeholder="给这一档起个名字…">
+      <button id="sv-do-save">保存到这里</button>
+    </div>
+    <div id="sv-grid"></div>
+    <div class="sv-actions-row">
+      <span style="flex:1;font-size:11px;color:var(--dim);align-self:center;text-align:left">
+        存档 = 种子 + 参数 + 年份，读档时逐字节重放还原；JSON 可分享给他人。
+      </span>
+      <button id="sv-import-trigger" title="导入他人分享的存档 JSON（支持多选）">📥 导入 JSON</button>
+      <input type="file" id="sv-import" accept=".json,application/json" multiple hidden>
+      <button id="sv-do-export-all" title="导出全部存档为一个备份文件">📤 导出全部备份</button>
+    </div>
+  </div>
+
+  <div id="sv-stats-pane" hidden></div>
+
+  <div class="btns"><button id="sv-close">关闭</button></div>
+</dialog>
+
+<!-- ===== 世界之规（设置） ===== -->
+<dialog id="dlg-settings">
+  <h2>⚙ 世界之规</h2>
+  <div class="set-sec">
+    <h4>播放</h4>
+    <div class="set-row">
+      <span>默认播放速度<span class="hint">进入游戏后的初始快慢；随时可在顶栏改</span></span>
+      <select id="set-speed">
+        <option value="600">慢（600ms/年）</option>
+        <option value="240">中（240ms/年）</option>
+        <option value="80">快（80ms/年）</option>
+        <option value="16">极速（16ms/年）</option>
+      </select>
+    </div>
+  </div>
+  <div class="set-sec">
+    <h4>视效与通知</h4>
+    <div class="set-row">
+      <span>谱系出生闪光<span class="hint">血脉添丁时头顶冒名字的小动画</span></span>
+      <span class="switch"><input type="checkbox" id="set-flash"><em></em></span>
+    </div>
+    <div class="set-row">
+      <span>成就达成弹窗<span class="hint">解锁时右上角金光横幅；关掉则只静默入册</span></span>
+      <span class="switch"><input type="checkbox" id="set-toasts"><em></em></span>
+    </div>
+  </div>
+  <div class="set-sec">
+    <h4>存档</h4>
+    <div class="set-row">
+      <span>自动存档间隔<span class="hint">每推进 N 年自动写入一份「自动存档」；断绝/终局时总会补一档</span></span>
+      <select id="set-autosave">
+        <option value="0">关</option>
+        <option value="25">每 25 年</option>
+        <option value="50">每 50 年</option>
+        <option value="100">每 100 年</option>
+      </select>
+    </div>
+  </div>
+  <div class="set-sec">
+    <h4>数据管理</h4>
+    <div class="set-danger-row">
+      <button id="set-import-backup-trigger">📥 导入备份文件</button>
+      <input type="file" id="set-import-backup" accept=".json,application/json" hidden>
+      <button id="set-clear-achv">清空成就数据</button>
+      <button id="set-clear-saves">删除所有存档</button>
+    </div>
+  </div>
+  <div class="btns"><button id="set-close">关闭</button></div>
+</dialog>
+
+<!-- ===== 分享图预览 ===== -->
+<dialog id="dlg-share">
+  <h2>🖼 成就分享图</h2>
+  <img id="share-img" alt="成就分享图预览"
+       style="width:100%;border-radius:6px;border:1px solid var(--line);display:block">
+  <div class="btns" style="margin-top:12px">
+    <button id="share-download">⬇ 下载 PNG</button>
+    <span style="flex:1"></span>
+    <button id="share-close">关闭</button>
+  </div>
+</dialog>
+
+<script src="names.js"></script>
+<script src="meta.js"></script>
+<script src="live.js"></script>
+</body>
+</html>

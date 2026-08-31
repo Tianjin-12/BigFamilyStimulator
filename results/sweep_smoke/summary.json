@@ -1,0 +1,82 @@
+{
+  "sweep": "parity_cap_base:5,8",
+  "combos": {
+    "{\"parity_cap_base\": 5}": {
+      "n_runs": 30,
+      "extinct_rate": 0.9,
+      "reasons_dist": {
+        "E1_no_male_born": 26,
+        "E2_male_unbred": 1
+      },
+      "survived_years_extinct": {
+        "median": 28,
+        "p10": 8,
+        "p90": 70
+      },
+      "max_lineage_gen": {
+        "median": 1.0,
+        "p90": 3
+      },
+      "pop_band": [
+        {
+          "t": 0,
+          "p25": 288,
+          "p50": 290,
+          "p75": 293
+        }
+      ]
+    },
+    "{\"parity_cap_base\": 8}": {
+      "n_runs": 30,
+      "extinct_rate": 0.9,
+      "reasons_dist": {
+        "E1_no_male_born": 23,
+        "E4_male_migrated": 3,
+        "E2_male_unbred": 1
+      },
+      "survived_years_extinct": {
+        "median": 42,
+        "p10": 7,
+        "p90": 121
+      },
+      "max_lineage_gen": {
+        "median": 1.0,
+        "p90": 8
+      },
+      "pop_band": [
+        {
+          "t": 0,
+          "p25": 288,
+          "p50": 290,
+          "p75": 293
+        }
+      ]
+    }
+  },
+  "all": {
+    "n_runs": 60,
+    "extinct_rate": 0.9,
+    "reasons_dist": {
+      "E1_no_male_born": 49,
+      "E2_male_unbred": 2,
+      "E4_male_migrated": 3
+    },
+    "survived_years_extinct": {
+      "median": 35.0,
+      "p10": 7,
+      "p90": 105
+    },
+    "max_lineage_gen": {
+      "median": 1.0,
+      "p90": 8
+    },
+    "pop_band": [
+      {
+        "t": 0,
+        "p25": 288,
+        "p50": 290,
+        "p75": 293
+      }
+    ]
+  }
+}

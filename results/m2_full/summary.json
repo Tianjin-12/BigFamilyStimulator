@@ -1,0 +1,29 @@
+{
+  "sweep": null,
+  "all": {
+    "n_runs": 200,
+    "extinct_rate": 0.94,
+    "reasons_dist": {
+      "E1_no_male_born": 178,
+      "E2_male_unbred": 8,
+      "E4_male_migrated": 4
+    },
+    "survived_years_extinct": {
+      "median": 31.0,
+      "p10": 6,
+      "p90": 85
+    },
+    "max_lineage_gen": {
+      "median": 1.0,
+      "p90": 4
+    },
+    "pop_band": [
+      {
+        "t": 0,
+        "p25": 286,
+        "p50": 289,
+        "p75": 292
+      }
+    ]
+  }
+}
